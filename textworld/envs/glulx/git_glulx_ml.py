@@ -125,21 +125,21 @@ def _detect_i7_events_debug_tags(text: str) -> Tuple[List[str], str]:
         in the text, and a cleaned text without Inform 7 debug infos.
     """
     matches = []
-    open_tags = []
+    open_tags = set()
     for match in re.findall(r"\[[^]]+\]\n?", text):
         text = text.replace(match, "")  # Remove i7 debug tags.
         tag_name = match.strip()[1:-1]  # Strip starting '[' and trailing ']'.
 
         if " - failed" in tag_name:
             tag_name = tag_name[:tag_name.index(" - failed")]
-            open_tags.remove(tag_name)
+            open_tags.discard(tag_name)
 
         elif " - succeeded" in tag_name:
             tag_name = tag_name[:tag_name.index(" - succeeded")]
-            open_tags.remove(tag_name)
+            open_tags.discard(tag_name)
             matches.append(tag_name)
         else:
-            open_tags.append(tag_name)
+            open_tags.add(tag_name)
 
     # If it's got either a '(' or ')' in it, it's a subrule,
     # so it doesn't count.
