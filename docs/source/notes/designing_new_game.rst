@@ -1,4 +1,4 @@
-Chapter 3 : How To Design A New Game
+Chapter 1 : How To Design A New Game
 ==============================================
 To design a new game, TextWorld framework provides a library to make a game called `GameMaker`. This library requires
 to use game logic and text grammar files which we already discussed about them in previous two chapters. By default,

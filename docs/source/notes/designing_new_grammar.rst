@@ -1,4 +1,4 @@
-Chapter 2 : How To Design A New Text Grammar
+Chapter 3 : How To Design A New Text Grammar
 ==============================================
 In addition to logic files, each game requires a grammar file in which it describes various sentences to be used within
 the game. For example, when the player enters a room, a few lines of the greetings to the game, introduction of the
