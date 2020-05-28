@@ -99,7 +99,12 @@ class Inform7Game:
     def gen_source_for_attributes(self, attributes: Iterable[Proposition]) -> str:
         source = ""
         for attr in attributes:
-            source_attr = self.gen_source_for_attribute(attr)
+            if attr.name.count('__') == 0:
+                attr_ = Proposition(name='is__' + attr.name, arguments=attr.arguments, verb='is', definition=attr.name)
+            else:
+                attr_ = attr
+
+            source_attr = self.gen_source_for_attribute(attr_)
             if source_attr:
                 source += source_attr + ".\n"
 
@@ -130,6 +135,14 @@ class Inform7Game:
 
         mapping = {ph.type: ph.name for ph in rule.placeholders}
         return i7event.format(**mapping)
+
+        # pt = self.kb.inform7_events[rule.name]
+        # if pt is None:
+        #     msg = "Undefined Inform7's command: {}".format(rule.name)
+        #     warnings.warn(msg, TextworldInform7Warning)
+        #     return None
+        #
+        # return pt.format(**self._get_entities_mapping(rule))
 
     def gen_source_for_actions(self, acts: Iterable[Action]) -> str:
         """Generate Inform 7 source for winning/losing actions."""
@@ -352,6 +365,13 @@ class Inform7Game:
                 commands = quest.win_event.commands or self.gen_commands_from_actions(quest.win_event.actions)
                 walkthrough = '\nTest quest{} with "{}"\n\n'.format(quest_id, " / ".join(commands))
                 quest_ending += walkthrough
+
+            # for event_id, event in enumerate(quest.win_events_list):
+            #     commands = self.gen_commands_from_actions(event.actions)
+            #     event.commands = commands
+            #
+            #     walkthrough = '\nTest quest{}_{} with "{}"\n\n'.format(quest_id, event_id, " / ".join(commands))
+            #     quest_ending += walkthrough
 
             # Add winning and losing conditions for quest.
             quest_ending_conditions = textwrap.dedent("""\
@@ -1050,19 +1070,27 @@ class Inform7Game:
                 return [None] * 5
 
             elif isinstance(combined_events, EventAction):
-                i7_ = self.gen_source_for_actions([combined_events.action])
+                i7_ = self.gen_source_for_actions(combined_events.actions)
                 if not rwd_conds or i7_ not in rwd_conds.values():
                     txt += [action_processing_template.format(action_id=len(action_id), actions=i7_)]
                     rmv += [remove_action_processing_template.format(action_id=len(action_id))]
-                    temp = ''
+                    temp = [self.gen_source_for_conditions([prop]) for prop in combined_events.actions[0].preconditions
+                            if prop.verb != 'is']
+                    if temp:
+                        temp = ' and ' + ' and '.join(t for t in temp)
+                    else:
+                        temp = ''
                     check_vars += ['action{action_id} check is true'.format(action_id=len(action_id)) + temp]
                     rwd_conds['action{action_id}'.format(action_id=len(action_id))] = i7_
                     action_id += [1]
                 else:
                     word = list(rwd_conds.keys())[list(rwd_conds.values()).index(i7_)]
                     rmv += [remove_action_processing_template.format(action_id=word[6:])]
-                    temp = ''
-                    check_vars += ['action{action_id} check is true'.format(action_id=word[6:]) + temp]
+                    # Take a second look to this	
+                    temp = [self.gen_source_for_conditions([prop]) for prop in combined_events.actions[0].preconditions
+                            if prop.verb != 'is']
+                    check_vars += ['action{action_id} check is true'.format(action_id=word[6:]) + ' and ' +
+                                   ' and '.join(t for t in temp)]
 
                 return [None] * 5
 
@@ -1075,8 +1103,8 @@ class Inform7Game:
             if st:
                 _txt += [st]
                 _rmv += [rm]
-                template = 'condition{cond_id} of quest{quest_id} check is true'
-                _check_vars.append(template.format(cond_id=len(cond_id) - 1, quest_id=quest_id))
+                _check_vars.append('condition{cond_id} of quest{quest_id} check is true'.format(cond_id=len(cond_id)-1,
+                                                                                                quest_id=quest_id))
                 if cond_type:
                     _cond_id += cond_type
 

@@ -1,0 +1,54 @@
+# container
+type c : t {
+    predicates {
+        open(c);       
+        closed(c);
+
+        in(o, c);        
+    }
+
+    rules {     
+        # open/c    :: $at(P, r) & $at(s, r) & $on(c, s) & $was__open(c) & closed(c) -> open(c);
+        # close/c   :: $at(P, r) & $at(s, r) & $on(c, s) & $was__open(c) & open(c) -> closed(c);
+  
+        open/c    :: $at(P, r) & $at(s, r) & $on(c, s) & $has_been__read/e(cpu) & closed(c) -> open(c);
+        close/c   :: $at(P, r) & $at(s, r) & $on(c, s) & $has_been__read/e(cpu) & open(c) -> closed(c);
+
+        open/c1   :: $at(P, r) & $at(s, r) & $on(c, s) & closed(c) -> open(c);
+        close/c1  :: $at(P, r) & $at(s, r) & $on(c, s) & open(c) -> closed(c);
+
+        # open/c1   :: $at(P, r) & $at(s, r) & $on(c, s) & closed(c) -> open(c) & was__closed(c);
+        # close/c1  :: $at(P, r) & $at(s, r) & $on(c, s) & open(c) -> closed(c) & was__open(c);
+    }
+
+    reverse_rules {
+        open/c   :: close/c;
+        open/c1  :: close/c1;
+    }
+
+    constraints {
+        c1 :: open(c) & closed(c) -> fail();
+    }
+
+    inform7 {
+        type {
+            kind :: "container";
+            definition :: "containers are openable and fixed in place. containers are usually closed.";
+        }
+
+        predicates {
+            open(c)   :: "The {c} is open";
+            closed(c) :: "The {c} is closed";
+
+            in(o, c)  :: "The {o} is in the {c}";
+        }
+
+        commands {
+            open/c    :: "open {c}" :: "opening the {c}";
+            close/c   :: "close {c}" :: "closing the {c}";
+
+            open/c1   :: "open {c}" :: "opening the {c}";
+            close/c1  :: "close {c}" :: "closing the {c}";
+        }
+    }
+}

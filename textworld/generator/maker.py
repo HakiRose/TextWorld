@@ -21,7 +21,7 @@ from textworld.generator.data import KnowledgeBase
 from textworld.generator.vtypes import get_new
 from textworld.logic import State, Variable, Proposition, Action, Placeholder
 from textworld.generator.game import GameOptions
-from textworld.generator.game import Game, World, Quest, EventAnd, EventCondition, EventAction, EntityInfo
+from textworld.generator.game import Game, World, Quest, AbstractEvent, EventAnd, EventOr, EventCondition, EventAction, EntityInfo
 from textworld.generator.graph_networks import DIRECTIONS
 from textworld.render import visualize
 from textworld.envs.wrappers import Recorder
@@ -29,7 +29,7 @@ from textworld.envs.wrappers import Recorder
 
 def get_failing_constraints(state, kb: Optional[KnowledgeBase] = None):
     kb = kb or KnowledgeBase.default()
-    fail = Proposition("fail", [])
+    fail = Proposition("is__fail", [])
 
     failed_constraints = []
     constraints = state.all_applicable_actions(kb.constraints.values())
@@ -43,6 +43,46 @@ def get_failing_constraints(state, kb: Optional[KnowledgeBase] = None):
                 failed_constraints.append(constraint)
 
     return failed_constraints
+
+#
+# def new_operation(operation={}):
+#     def func(operator='or', events=[]):
+#         if operator == 'or' and events:
+#             return EventOr(events=events)
+#         if operator == 'and' and events:
+#             return EventAnd(events=events)
+#         else:
+#             raise
+#
+#     if not isinstance(operation, dict):
+#         if len(operation) == 0:
+#             return ()
+#         else:
+#             operation = {'or': tuple(ev for ev in operation)}
+#
+#     y1 = []
+#     for k, v in operation.items():
+#         if isinstance(v, dict):
+#             y1.append(new_operation(operation=v)[0])
+#             y1 = [func(k, y1)]
+#         else:
+#             if isinstance(v, EventCondition) or isinstance(v, EventAction):
+#                 y1.append(func(k, [v]))
+#             else:
+#                 if any((isinstance(it, dict) for it in v)):
+#                     y2 = []
+#                     for it in v:
+#                         if isinstance(it, dict):
+#                             y2.append(new_operation(operation=it)[0])
+#                         else:
+#                             y2.append(func(k, [it]))
+#
+#                     y1 = [func(k, y2)]
+#                 else:
+#                     y1.append(func(k, v))
+#
+#     return tuple(y1)
+#
 
 
 class MissingPlayerError(ValueError):
@@ -151,7 +191,7 @@ class WorldEntity:
             *entities: A list of entities as arguments to the new fact.
         """
         args = [entity.var for entity in entities]
-        self._facts.append(Proposition(name, args))
+        self._facts.append(Proposition(name='is__' + name, arguments=args))
 
     def remove_fact(self, name: str, *entities: List["WorldEntity"]) -> None:
         args = [entity.var for entity in entities]
@@ -702,18 +742,31 @@ class GameMaker:
         mapping = {Placeholder(entity.type): Placeholder(entity.id, entity.type) for entity in entities}
         return rule.substitute(mapping)
 
-    def new_event(self, action: Iterable[Action] = (), condition: Iterable[Proposition] = (),
-                  command: Iterable[str] = (), condition_verb_tense: dict = (), action_verb_tense: dict = (),
-                  event_style: str = 'condition'):
-        if event_style == 'condition':
-            event = EventCondition(conditions=condition, verb_tense=condition_verb_tense, actions=action,
-                                   commands=command)
+    def new_event(self, actions: Iterable[Action] = (),
+                  conditions: Iterable[Proposition] = (),
+                  commands: Iterable[str] = (),
+                  event_type: str = 'condition',
+                  **kwargs
+                  ):
+        if event_type == 'condition':
+            event = EventCondition(conditions=conditions, actions=actions, commands=commands, **kwargs)
             return event
-        elif event_style == 'action':
-            event = EventAction(actions=action, verb_tense=action_verb_tense, commands=command)
+        elif event_type == 'action':
+            event = EventAction(action=actions, commands=commands, **kwargs)
             return event
-        else:
-            raise UnderspecifiedEventError
+
+    def new_combination(self, and_combination: Optional[Iterable[AbstractEvent]] = None,
+                        or_combination: Optional[Iterable[AbstractEvent]] = None):
+
+        if and_combination and or_combination:
+            msg = "Only one type of combination can be assigned at each call."
+            raise ValueError(msg)
+
+        if and_combination:
+            return EventAnd(events=and_combination)
+
+        if or_combination:
+            return EventOr(events=or_combination)
 
     def new_quest(self, win_event=None, fail_event=None, reward=None, desc=None, commands=()) -> Quest:
         return Quest(win_event=win_event,
@@ -722,7 +775,7 @@ class GameMaker:
                      desc=desc,
                      commands=commands)
 
-    def new_event_using_commands(self, commands: List[str]) -> Union[EventCondition, EventAction]:
+    def new_event_using_commands(self, commands: List[str], event_style: str) -> Union[EventCondition, EventAction]:
         """ Creates a new event using predefined text commands.
 
         This launches a `textworld.play` session to execute provided commands.
@@ -744,10 +797,10 @@ class GameMaker:
 
         # Skip "None" actions.
         actions, commands = zip(*[(a, c) for a, c in zip(recorder.actions, commands) if a is not None])
-        event = EventCondition(actions=actions, commands=commands)
+        event = self.new_event(actions=actions, commands=commands, event_type=event_style)
         return event
 
-    def new_quest_using_commands(self, commands: List[str]) -> Quest:
+    def new_quest_using_commands(self, commands: List[str], event_style: str) -> Quest:
         """ Creates a new quest using predefined text commands.
 
         This launches a `textworld.play` session to execute provided commands.
@@ -758,8 +811,8 @@ class GameMaker:
         Returns:
             The resulting quest.
         """
-        event = self.new_event_using_commands(commands)
-        return Quest(win_event=event, commands=event.commands)
+        event = self.new_event_using_commands(commands, event_style=event_style)
+        return Quest(win_event=self.new_combination(or_combination=[event]), commands=event.commands)
 
     def set_walkthrough(self, *walkthroughs: List[str]):
         # Assuming quest.events return a list of EventAnd.
