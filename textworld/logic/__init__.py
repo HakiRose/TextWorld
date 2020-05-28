@@ -737,17 +737,12 @@ class Proposition(with_metaclass(PropositionTracker, object)):
         return {
             "name": self.name,
             "arguments": [var.serialize() for var in self.arguments],
-            # "verb": self.verb,
-            # "definition": self.definition,
         }
 
     @classmethod
     def deserialize(cls, data: Mapping) -> "Proposition":
         name = data["name"]
         args = [Variable.deserialize(arg) for arg in data["arguments"]]
-        # verb = data["verb"]
-        # definition = data["definition"]
-        # activate = data["activate"]
         return cls(name, args)
 
 

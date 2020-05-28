@@ -17,7 +17,7 @@ from textworld.utils import make_temp_directory, str2bool, chunk
 
 from textworld.generator.game import EventCondition, EventAction, Event, EventAnd, EventOr, Game
 from textworld.generator.world import WorldRoom, WorldEntity
-from textworld.logic import Signature, Proposition, Action, Variable
+from textworld.logic import Signature, Proposition, Action, Variable, Rule
 
 
 I7_DEFAULT_PATH = resource_filename(Requirement.parse('textworld'), 'textworld/thirdparty/inform7-6M62')
@@ -127,13 +127,22 @@ class Inform7Game:
         return " and ".join(i7_conds)
 
     def gen_source_for_rule(self, rule: Action) -> Optional[str]:
-        pt = self.kb.inform7_events[rule.name]
-        if pt is None:
+        i7event = self.kb.inform7_events.get(rule.name)
+        if i7event is None:
             msg = "Undefined Inform7's command: {}".format(rule.name)
             warnings.warn(msg, TextworldInform7Warning)
             return None
 
-        return pt.format(**self._get_entities_mapping(rule))
+        mapping = {ph.type: ph.name for ph in rule.placeholders}
+        return i7event.format(**mapping)
+
+        # pt = self.kb.inform7_events[rule.name]
+        # if pt is None:
+        #     msg = "Undefined Inform7's command: {}".format(rule.name)
+        #     warnings.warn(msg, TextworldInform7Warning)
+        #     return None
+        #
+        # return pt.format(**self._get_entities_mapping(rule))
 
     def gen_source_for_actions(self, acts: Iterable[Action]) -> str:
         """Generate Inform 7 source for winning/losing actions."""
@@ -357,12 +366,17 @@ class Inform7Game:
             """)
             quest_ending = quest_completed.format(quest_id=quest_id)
 
-            for event_id, event in enumerate(quest.win_events_list):
-                commands = self.gen_commands_from_actions(event.actions)
-                event.commands = commands
-
-                walkthrough = '\nTest quest{}_{} with "{}"\n\n'.format(quest_id, event_id, " / ".join(commands))
+            if quest.win_event:
+                commands = quest.win_event.commands or self.gen_commands_from_actions(quest.win_event.actions)
+                walkthrough = '\nTest quest{} with "{}"\n\n'.format(quest_id, " / ".join(commands))
                 quest_ending += walkthrough
+
+            # for event_id, event in enumerate(quest.win_events_list):
+            #     commands = self.gen_commands_from_actions(event.actions)
+            #     event.commands = commands
+            #
+            #     walkthrough = '\nTest quest{}_{} with "{}"\n\n'.format(quest_id, event_id, " / ".join(commands))
+            #     quest_ending += walkthrough
 
             # Add winning and losing conditions for quest.
             quest_ending_conditions = textwrap.dedent("""\

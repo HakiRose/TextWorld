@@ -6,11 +6,12 @@ import re
 from collections import OrderedDict
 from typing import Union, Iterable
 
-from textworld.generator.game import Quest, EventCondition, EventAction, EventAnd, EventOr, Game
+from textworld.generator.game import Quest, Game
+from textworld.generator.game import AbstractEvent, EventCondition, EventAction, EventAnd, EventOr
 
 from textworld.generator.text_grammar import Grammar
 from textworld.generator.text_grammar import fix_determinant
-from textworld.logic import Placeholder
+from textworld.logic import Placeholder, Rule
 
 
 class CountOrderedDict(OrderedDict):
@@ -325,6 +326,9 @@ def generate_instruction(action, grammar, game, counts):
     mapping = OrderedDict()
     if isinstance(action, MergeAction):
         action_mapping = action.mapping
+    elif isinstance(action, Rule):
+        # action_mapping = game.kb.rules[action.name]
+        action_mapping = {p.name: p.type for p in action.placeholders}
     else:
         action_mapping = game.kb.rules[action.name].match(action)
 
@@ -398,284 +402,30 @@ def quest_counter(counter):
         return str(counter) + 'th'
 
 
-def describe_quests(game: Game, grammar: Grammar):
-    counter = 1
-    quests_desc_arr = []
-    for quest in game.quests:
-        if quest.desc:
-            quests_desc_arr.append("The " + quest_counter(counter) + " quest: \n" + quest.desc)
-            counter += 1
-
-    quests_desc_arr
-    if quests_desc_arr:
-        quests_desc_ = " \n ".join(txt for txt in quests_desc_arr if txt)
-        quests_desc_ = ": \n " + quests_desc_ + " \n *** "
-        quests_tag = grammar.get_random_expansion("#all_quests#")
-        quests_tag = quests_tag.replace("(quests_string)", quests_desc_.strip())
-        quests_description = grammar.expand(quests_tag)
-        quests_description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                                    lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                                    quests_description)
-    else:
-        quests_tag = grammar.get_random_expansion("#all_quests_non#")
-        quests_description = grammar.expand(quests_tag)
-        quests_description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                                    lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                                    quests_description)
-    return quests_description
-
-
 def assign_description_to_quest(quest: Quest, game: Game, grammar: Grammar):
-    desc = []
+    if quest.win_event is None:
+       return ""
+
+    event_descriptions = []
     indx = '> '
-    for event in quest.win_events[0].events:
-        if isinstance(event, EventCondition) or isinstance(event, EventAction):
-            st = assign_description_to_event(event, game, grammar)
-        else:
-            st = assign_description_to_combined_events(event, game, grammar, indx)
-
-        if st:
-            desc += [st]
-
-    if quest.reward < 0:
-        return describe_punishing_quest(make_str(desc), grammar, indx)
-    else:
-        return describe_quest(make_str(desc), quest.win_events[0], grammar, indx)
+    for events in quest.win_event:
+        for event in events:
+            describe_event(event, game, grammar)
 
 
-def describe_punishing_quest(quest_desc: Iterable[str], grammar: Grammar, index_symbol='> '):
-    if len(quest_desc) == 0:
-        description = describe_punishing_quest_none(grammar)
-    else:
-        description = describe_punishing_quest(quest_desc, grammar, index_symbol)
+        # event_descriptions += [describe_event(events, game, grammar)]
 
-    return description
-
-
-def describe_punishing_quest_none(grammar: Grammar):
-    quest_tag = grammar.get_random_expansion("#punishing_quest_none#")
-    quest_desc = grammar.expand(quest_tag)
-    quest_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                        lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                        quest_desc)
+    quest_desc = " OR ".join(desc for desc in event_descriptions if desc)
     return quest_desc
 
 
-def describe_punishing_quest(quest_desc: Iterable[str], grammar: Grammar, index_symbol) -> str:
-    only_one_task = len(quest_desc) < 2
-    quest_desc = [index_symbol + desc for desc in quest_desc if desc]
-    quest_txt = " \n ".join(desc for desc in quest_desc if desc)
-    quest_txt = ": \n " + quest_txt
+def assign_description_to_event(event: Union[EventCondition, EventAction], game: Game, grammar: Grammar, index_symbol):
 
-    if only_one_task:
-        quest_tag = grammar.get_random_expansion("#punishing_quest_one_task#")
-        quest_tag = quest_tag.replace("(combined_task)", quest_txt.strip())
-    else:
-        quest_tag = grammar.get_random_expansion("#punishing_quest_tasks#")
-        quest_tag = quest_tag.replace("(list_of_combined_tasks)", quest_txt.strip())
-
-    description = grammar.expand(quest_tag)
-    description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                         lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                         description)
-    return description
-
-
-def describe_quest(quest_desc: Iterable[str], combination_rule: Iterable[Union[EventOr, EventAnd]],
-                   grammar: Grammar, index_symbol='> '):
-    if len(quest_desc) == 0:
-        description = describe_quest_none(grammar)
-    else:
-        if isinstance(combination_rule, EventOr):
-            description = describe_quest_or(quest_desc, grammar, index_symbol)
-        elif isinstance(combination_rule, EventAnd):
-            description = describe_quest_and(quest_desc, grammar, index_symbol)
-
-    return description
-
-
-def describe_quest_none(grammar: Grammar):
-    quest_tag = grammar.get_random_expansion("#quest_none#")
-    quest_desc = grammar.expand(quest_tag)
-    quest_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                        lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                        quest_desc)
-    return quest_desc
-
-
-def describe_quest_or(quest_desc: Iterable[str], grammar: Grammar, index_symbol) -> str:
-    only_one_task = len(quest_desc) < 2
-    quest_desc = [index_symbol + desc for desc in quest_desc if desc]
-    quest_txt = " \n ".join(desc for desc in quest_desc if desc)
-    quest_txt = ": \n " + quest_txt
-
-    if only_one_task:
-        quest_tag = grammar.get_random_expansion("#quest_one_task#")
-        quest_tag = quest_tag.replace("(combined_task)", quest_txt.strip())
-    else:
-        quest_tag = grammar.get_random_expansion("#quest_or_tasks#")
-        quest_tag = quest_tag.replace("(list_of_combined_tasks)", quest_txt.strip())
-
-    description = grammar.expand(quest_tag)
-    description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                         lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                         description)
-    return description
-
-
-def describe_quest_and(quest_desc: Iterable[str], grammar: Grammar, index_symbol) -> str:
-    only_one_task = len(quest_desc) < 2
-    quest_desc = [index_symbol + desc for desc in quest_desc if desc]
-    quest_txt = " \n ".join(desc for desc in quest_desc if desc)
-    quest_txt = ": \n " + quest_txt
-
-    if only_one_task:
-        quest_tag = grammar.get_random_expansion("#quest_one_task#")
-        quest_tag = quest_tag.replace("(combined_task)", quest_txt.strip())
-    else:
-        quest_tag = grammar.get_random_expansion("#quest_and_tasks#")
-        quest_tag = quest_tag.replace("(list_of_combined_tasks)", quest_txt.strip())
-
-    description = grammar.expand(quest_tag)
-    description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                         lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                         description)
-    return description
-
-
-def assign_description_to_combined_events(events: Union[EventAnd, EventOr], game: Game, grammar: Grammar, index_symbol,
-                                          _desc=[]):
-    if isinstance(events, EventCondition) or isinstance(events, EventAction):
-        _desc += [assign_description_to_event(events, game, grammar)]
-        return
-
-    index_symbol = '-' + index_symbol
     desc, ev_type = [], []
-    for event in events.events:
-        st = assign_description_to_combined_events(event, game, grammar, index_symbol, desc)
-        ev_type.append(isinstance(event, EventCondition) or isinstance(event, EventAction))
-
-        if st:
-            desc += [st]
-
-    if all(ev_type):
-        st1 = combine_events(make_str(desc), events, grammar)
-    else:
-        st1 = combine_tasks(make_str(desc), events, grammar, index_symbol)
-
-    return st1
+    describe_event(event, game, grammar)
 
 
-def combine_events(events: Iterable[str], combination_rule: Iterable[Union[EventOr, EventAnd]], grammar: Grammar):
-    if len(events) == 0:
-        events_desc = ""
-    else:
-        if isinstance(combination_rule, EventOr):
-            events_desc = describe_event_or(events, grammar)
-        elif isinstance(combination_rule, EventAnd):
-            events_desc = describe_event_and(events, grammar)
-
-    return events_desc
-
-
-def describe_event_or(events_desc: Iterable[str], grammar: Grammar) -> str:
-    only_one_event = len(events_desc) < 2
-    combined_event_txt = " , or, ".join(desc for desc in events_desc if desc)
-    combined_event_txt = ": " + combined_event_txt
-
-    if only_one_event:
-        combined_event_tag = grammar.get_random_expansion("#combined_one_event#")
-        combined_event_tag = combined_event_tag.replace("(only_event)", combined_event_txt.strip())
-    else:
-        combined_event_tag = grammar.get_random_expansion("#combined_or_events#")
-        combined_event_tag = combined_event_tag.replace("(list_of_events)", combined_event_txt.strip())
-
-    combined_event_desc = grammar.expand(combined_event_tag)
-    combined_event_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                                 lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                                 combined_event_desc)
-
-    return combined_event_desc
-
-
-def describe_event_and(events_desc: Iterable[str], grammar: Grammar) -> str:
-    only_one_event = len(events_desc) < 2
-    combined_event_txt = " , and, ".join(desc for desc in events_desc if desc)
-    combined_event_txt = ": " + combined_event_txt
-
-    if only_one_event:
-        combined_event_tag = grammar.get_random_expansion("#combined_one_event#")
-        combined_event_tag = combined_event_tag.replace("(only_event)", combined_event_txt.strip())
-    else:
-        combined_event_tag = grammar.get_random_expansion("#combined_and_events#")
-        combined_event_tag = combined_event_tag.replace("(list_of_events)", combined_event_txt.strip())
-
-    combined_event_desc = grammar.expand(combined_event_tag)
-    combined_event_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                                 lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                                 combined_event_desc)
-
-    return combined_event_desc
-
-
-def combine_tasks(tasks: Iterable[str], combination_rule: Iterable[Union[EventOr, EventAnd]],
-                  grammar: Grammar, index_symbol: str):
-    if len(tasks) == 0:
-        tasks_desc = ""
-    else:
-        if isinstance(combination_rule, EventOr):
-            tasks_desc = describe_tasks_or(tasks, grammar, index_symbol)
-        if isinstance(combination_rule, EventAnd):
-            tasks_desc = describe_tasks_and(tasks, grammar, index_symbol)
-
-    return tasks_desc
-
-
-def describe_tasks_and(tasks_desc: Iterable[str], grammar: Grammar, index_symbol: str) -> str:
-    only_one_task = len(tasks_desc) < 2
-    tasks_desc = [index_symbol + desc for desc in tasks_desc if desc]
-    tasks_txt = " \n ".join(desc for desc in tasks_desc if desc)
-    tasks_txt = ": \n " + tasks_txt
-
-    if only_one_task:
-        combined_task_tag = grammar.get_random_expansion("#combined_one_task#")
-        combined_task_tag = combined_task_tag.replace("(only_task)", tasks_txt.strip())
-    else:
-        combined_task_tag = grammar.get_random_expansion("#combined_and_tasks#")
-        combined_task_tag = combined_task_tag.replace("(list_of_tasks)", tasks_txt.strip())
-
-    combined_task_desc = grammar.expand(combined_task_tag)
-    combined_task_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                                lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                                combined_task_desc)
-    return combined_task_desc
-
-
-def describe_tasks_or(tasks_desc: Iterable[str], grammar: Grammar, index_symbol: str) -> str:
-    only_one_task = len(tasks_desc) < 2
-    tasks_desc = [index_symbol + desc for desc in tasks_desc if desc]
-    tasks_txt = " \n ".join(desc for desc in tasks_desc if desc)
-    tasks_txt = ": \n " + tasks_txt
-
-    if only_one_task:
-        combined_task_tag = grammar.get_random_expansion("#combined_one_task#")
-        combined_task_tag = combined_task_tag.replace("(only_task)", tasks_txt.strip())
-    else:
-        combined_task_tag = grammar.get_random_expansion("#combined_and_tasks#")
-        combined_task_tag = combined_task_tag.replace("(list_of_tasks)", tasks_txt.strip())
-
-    combined_task_desc = grammar.expand(combined_task_tag)
-    combined_task_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
-                                lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
-                                combined_task_desc)
-    return combined_task_desc
-
-
-def assign_description_to_event(events: Union[EventAction, EventCondition], game: Game, grammar: Grammar):
-    return describe_event(events, game, grammar)
-
-
-def describe_event(event: Union[EventCondition, EventAction], game: Game, grammar: Grammar) -> str:
+def describe_event(event: AbstractEvent, game: Game, grammar: Grammar) -> str:
     """
     Assign a descripton to a quest.
     """
@@ -696,21 +446,26 @@ def describe_event(event: Union[EventCondition, EventAction], game: Game, gramma
         counts['noun'][obj_infos.noun] += 1
         counts['type'][obj.type] += 1
 
-    if len(event.actions) == 0:
+    if event.__class__.__name__ == 'EventCondition':
+        action_ = event.actions
+    elif event.__class__.__name__ == 'EventAction':
+        action_ = [event.action]
+
+    if len(action_) == 0:
         # We don't need to say anything if the quest is empty
         event_desc = ""
     else:
         # Generate a description for either the last, or all commands
         if grammar.options.only_last_action:
-            actions_desc, _ = generate_instruction(event.actions[-1], grammar, game, counts)
+            actions_desc, _ = generate_instruction(action_[-1], grammar, game, counts)
             only_one_action = True
         else:
             actions_desc_list = []
             # Decide if we blend instructions together or not
             if grammar.options.blend_instructions:
-                instructions = get_action_chains(event.actions, grammar, game)
+                instructions = get_action_chains(action_, grammar, game)
             else:
-                instructions = [act for act in event.actions]
+                instructions = action_
 
             only_one_action = len(instructions) < 2
             for c in instructions:
@@ -720,14 +475,353 @@ def describe_event(event: Union[EventCondition, EventAction], game: Game, gramma
                     actions_desc_list.append(separator)
             actions_desc = " ".join(actions_desc_list)
 
-        event_tag = grammar.get_random_expansion("#event#")
-        event_tag = event_tag.replace("(list_of_actions)", actions_desc.strip())
+        if only_one_action:
+            quest_tag = grammar.get_random_expansion("#quest_one_action#")
+            quest_tag = quest_tag.replace("(action)", actions_desc.strip())
 
-        event_desc = grammar.expand(event_tag)
+        else:
+            quest_tag = grammar.get_random_expansion("#quest#")
+            quest_tag = quest_tag.replace("(list_of_actions)", actions_desc.strip())
+
+        event_desc = grammar.expand(quest_tag)
         event_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
                             lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
                             event_desc)
+
     return event_desc
+
+
+#
+# def describe_quests(game: Game, grammar: Grammar):
+#     counter = 1
+#     quests_desc_arr = []
+#     for quest in game.quests:
+#         if quest.desc:
+#             quests_desc_arr.append("The " + quest_counter(counter) + " quest: \n" + quest.desc)
+#             counter += 1
+#
+#     quests_desc_arr
+#     if quests_desc_arr:
+#         quests_desc_ = " \n ".join(txt for txt in quests_desc_arr if txt)
+#         quests_desc_ = ": \n " + quests_desc_ + " \n *** "
+#         quests_tag = grammar.get_random_expansion("#all_quests#")
+#         quests_tag = quests_tag.replace("(quests_string)", quests_desc_.strip())
+#         quests_description = grammar.expand(quests_tag)
+#         quests_description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                                     lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                                     quests_description)
+#     else:
+#         quests_tag = grammar.get_random_expansion("#all_quests_non#")
+#         quests_description = grammar.expand(quests_tag)
+#         quests_description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                                     lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                                     quests_description)
+#     return quests_description
+#
+#
+# def assign_description_to_quest(quest: Quest, game: Game, grammar: Grammar):
+#     desc = []
+#     indx = '> '
+#     for event in quest.win_events[0].events:
+#         if isinstance(event, EventCondition) or isinstance(event, EventAction):
+#             st = assign_description_to_event(event, game, grammar)
+#         else:
+#             st = assign_description_to_combined_events(event, game, grammar, indx)
+#
+#         if st:
+#             desc += [st]
+#
+#     if quest.reward < 0:
+#         return describe_punishing_quest(make_str(desc), grammar, indx)
+#     else:
+#         return describe_quest(make_str(desc), quest.win_events[0], grammar, indx)
+#
+#
+# def describe_punishing_quest(quest_desc: Iterable[str], grammar: Grammar, index_symbol='> '):
+#     if len(quest_desc) == 0:
+#         description = describe_punishing_quest_none(grammar)
+#     else:
+#         description = describe_punishing_quest(quest_desc, grammar, index_symbol)
+#
+#     return description
+#
+#
+# def describe_punishing_quest_none(grammar: Grammar):
+#     quest_tag = grammar.get_random_expansion("#punishing_quest_none#")
+#     quest_desc = grammar.expand(quest_tag)
+#     quest_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                         lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                         quest_desc)
+#     return quest_desc
+#
+#
+# def describe_punishing_quest(quest_desc: Iterable[str], grammar: Grammar, index_symbol) -> str:
+#     only_one_task = len(quest_desc) < 2
+#     quest_desc = [index_symbol + desc for desc in quest_desc if desc]
+#     quest_txt = " \n ".join(desc for desc in quest_desc if desc)
+#     quest_txt = ": \n " + quest_txt
+#
+#     if only_one_task:
+#         quest_tag = grammar.get_random_expansion("#punishing_quest_one_task#")
+#         quest_tag = quest_tag.replace("(combined_task)", quest_txt.strip())
+#     else:
+#         quest_tag = grammar.get_random_expansion("#punishing_quest_tasks#")
+#         quest_tag = quest_tag.replace("(list_of_combined_tasks)", quest_txt.strip())
+#
+#     description = grammar.expand(quest_tag)
+#     description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                          lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                          description)
+#     return description
+#
+#
+# def describe_quest(quest_desc: Iterable[str], combination_rule: Iterable[Union[EventOr, EventAnd]],
+#                    grammar: Grammar, index_symbol='> '):
+#     if len(quest_desc) == 0:
+#         description = describe_quest_none(grammar)
+#     else:
+#         if isinstance(combination_rule, EventOr):
+#             description = describe_quest_or(quest_desc, grammar, index_symbol)
+#         elif isinstance(combination_rule, EventAnd):
+#             description = describe_quest_and(quest_desc, grammar, index_symbol)
+#
+#     return description
+#
+#
+# def describe_quest_none(grammar: Grammar):
+#     quest_tag = grammar.get_random_expansion("#quest_none#")
+#     quest_desc = grammar.expand(quest_tag)
+#     quest_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                         lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                         quest_desc)
+#     return quest_desc
+#
+#
+# def describe_quest_or(quest_desc: Iterable[str], grammar: Grammar, index_symbol) -> str:
+#     only_one_task = len(quest_desc) < 2
+#     quest_desc = [index_symbol + desc for desc in quest_desc if desc]
+#     quest_txt = " \n ".join(desc for desc in quest_desc if desc)
+#     quest_txt = ": \n " + quest_txt
+#
+#     if only_one_task:
+#         quest_tag = grammar.get_random_expansion("#quest_one_task#")
+#         quest_tag = quest_tag.replace("(combined_task)", quest_txt.strip())
+#     else:
+#         quest_tag = grammar.get_random_expansion("#quest_or_tasks#")
+#         quest_tag = quest_tag.replace("(list_of_combined_tasks)", quest_txt.strip())
+#
+#     description = grammar.expand(quest_tag)
+#     description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                          lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                          description)
+#     return description
+#
+#
+# def describe_quest_and(quest_desc: Iterable[str], grammar: Grammar, index_symbol) -> str:
+#     only_one_task = len(quest_desc) < 2
+#     quest_desc = [index_symbol + desc for desc in quest_desc if desc]
+#     quest_txt = " \n ".join(desc for desc in quest_desc if desc)
+#     quest_txt = ": \n " + quest_txt
+#
+#     if only_one_task:
+#         quest_tag = grammar.get_random_expansion("#quest_one_task#")
+#         quest_tag = quest_tag.replace("(combined_task)", quest_txt.strip())
+#     else:
+#         quest_tag = grammar.get_random_expansion("#quest_and_tasks#")
+#         quest_tag = quest_tag.replace("(list_of_combined_tasks)", quest_txt.strip())
+#
+#     description = grammar.expand(quest_tag)
+#     description = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                          lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                          description)
+#     return description
+#
+#
+# def assign_description_to_combined_events(events: Union[EventAnd, EventOr], game: Game, grammar: Grammar, index_symbol,
+#                                           _desc=[]):
+#     if isinstance(events, EventCondition) or isinstance(events, EventAction):
+#         _desc += [assign_description_to_event(events, game, grammar)]
+#         return
+#
+#     index_symbol = '-' + index_symbol
+#     desc, ev_type = [], []
+#     for event in events.events:
+#         st = assign_description_to_combined_events(event, game, grammar, index_symbol, desc)
+#         ev_type.append(isinstance(event, EventCondition) or isinstance(event, EventAction))
+#
+#         if st:
+#             desc += [st]
+#
+#     if all(ev_type):
+#         st1 = combine_events(make_str(desc), events, grammar)
+#     else:
+#         st1 = combine_tasks(make_str(desc), events, grammar, index_symbol)
+#
+#     return st1
+#
+#
+# def combine_events(events: Iterable[str], combination_rule: Iterable[Union[EventOr, EventAnd]], grammar: Grammar):
+#     if len(events) == 0:
+#         events_desc = ""
+#     else:
+#         if isinstance(combination_rule, EventOr):
+#             events_desc = describe_event_or(events, grammar)
+#         elif isinstance(combination_rule, EventAnd):
+#             events_desc = describe_event_and(events, grammar)
+#
+#     return events_desc
+#
+#
+# def describe_event_or(events_desc: Iterable[str], grammar: Grammar) -> str:
+#     only_one_event = len(events_desc) < 2
+#     combined_event_txt = " , or, ".join(desc for desc in events_desc if desc)
+#     combined_event_txt = ": " + combined_event_txt
+#
+#     if only_one_event:
+#         combined_event_tag = grammar.get_random_expansion("#combined_one_event#")
+#         combined_event_tag = combined_event_tag.replace("(only_event)", combined_event_txt.strip())
+#     else:
+#         combined_event_tag = grammar.get_random_expansion("#combined_or_events#")
+#         combined_event_tag = combined_event_tag.replace("(list_of_events)", combined_event_txt.strip())
+#
+#     combined_event_desc = grammar.expand(combined_event_tag)
+#     combined_event_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                                  lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                                  combined_event_desc)
+#
+#     return combined_event_desc
+#
+#
+# def describe_event_and(events_desc: Iterable[str], grammar: Grammar) -> str:
+#     only_one_event = len(events_desc) < 2
+#     combined_event_txt = " , and, ".join(desc for desc in events_desc if desc)
+#     combined_event_txt = ": " + combined_event_txt
+#
+#     if only_one_event:
+#         combined_event_tag = grammar.get_random_expansion("#combined_one_event#")
+#         combined_event_tag = combined_event_tag.replace("(only_event)", combined_event_txt.strip())
+#     else:
+#         combined_event_tag = grammar.get_random_expansion("#combined_and_events#")
+#         combined_event_tag = combined_event_tag.replace("(list_of_events)", combined_event_txt.strip())
+#
+#     combined_event_desc = grammar.expand(combined_event_tag)
+#     combined_event_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                                  lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                                  combined_event_desc)
+#
+#     return combined_event_desc
+#
+#
+# def combine_tasks(tasks: Iterable[str], combination_rule: Iterable[Union[EventOr, EventAnd]],
+#                   grammar: Grammar, index_symbol: str):
+#     if len(tasks) == 0:
+#         tasks_desc = ""
+#     else:
+#         if isinstance(combination_rule, EventOr):
+#             tasks_desc = describe_tasks_or(tasks, grammar, index_symbol)
+#         if isinstance(combination_rule, EventAnd):
+#             tasks_desc = describe_tasks_and(tasks, grammar, index_symbol)
+#
+#     return tasks_desc
+#
+#
+# def describe_tasks_and(tasks_desc: Iterable[str], grammar: Grammar, index_symbol: str) -> str:
+#     only_one_task = len(tasks_desc) < 2
+#     tasks_desc = [index_symbol + desc for desc in tasks_desc if desc]
+#     tasks_txt = " \n ".join(desc for desc in tasks_desc if desc)
+#     tasks_txt = ": \n " + tasks_txt
+#
+#     if only_one_task:
+#         combined_task_tag = grammar.get_random_expansion("#combined_one_task#")
+#         combined_task_tag = combined_task_tag.replace("(only_task)", tasks_txt.strip())
+#     else:
+#         combined_task_tag = grammar.get_random_expansion("#combined_and_tasks#")
+#         combined_task_tag = combined_task_tag.replace("(list_of_tasks)", tasks_txt.strip())
+#
+#     combined_task_desc = grammar.expand(combined_task_tag)
+#     combined_task_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                                 lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                                 combined_task_desc)
+#     return combined_task_desc
+#
+#
+# def describe_tasks_or(tasks_desc: Iterable[str], grammar: Grammar, index_symbol: str) -> str:
+#     only_one_task = len(tasks_desc) < 2
+#     tasks_desc = [index_symbol + desc for desc in tasks_desc if desc]
+#     tasks_txt = " \n ".join(desc for desc in tasks_desc if desc)
+#     tasks_txt = ": \n " + tasks_txt
+#
+#     if only_one_task:
+#         combined_task_tag = grammar.get_random_expansion("#combined_one_task#")
+#         combined_task_tag = combined_task_tag.replace("(only_task)", tasks_txt.strip())
+#     else:
+#         combined_task_tag = grammar.get_random_expansion("#combined_and_tasks#")
+#         combined_task_tag = combined_task_tag.replace("(list_of_tasks)", tasks_txt.strip())
+#
+#     combined_task_desc = grammar.expand(combined_task_tag)
+#     combined_task_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                                 lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                                 combined_task_desc)
+#     return combined_task_desc
+#
+#
+# def assign_description_to_event(events: Union[EventAction, EventCondition], game: Game, grammar: Grammar):
+#     return describe_event(events, game, grammar)
+#
+#
+# def describe_event(event: Union[EventCondition, EventAction], game: Game, grammar: Grammar) -> str:
+#     """
+#     Assign a descripton to a quest.
+#     """
+#     # We have to "count" all the adj/noun/types in the world
+#     # This is important for using "unique" but abstracted references to objects
+#     counts = OrderedDict()
+#     counts["adj"] = CountOrderedDict()
+#     counts["noun"] = CountOrderedDict()
+#     counts["type"] = CountOrderedDict()
+#
+#     # Assign name and description to objects.
+#     for obj in game.world.objects:
+#         if obj.type in ["I", "P"]:
+#             continue
+#
+#         obj_infos = game.infos[obj.id]
+#         counts['adj'][obj_infos.adj] += 1
+#         counts['noun'][obj_infos.noun] += 1
+#         counts['type'][obj.type] += 1
+#
+#     if len(event.actions) == 0:
+#         # We don't need to say anything if the quest is empty
+#         event_desc = ""
+#     else:
+#         # Generate a description for either the last, or all commands
+#         if grammar.options.only_last_action:
+#             actions_desc, _ = generate_instruction(event.actions[-1], grammar, game, counts)
+#             only_one_action = True
+#         else:
+#             actions_desc_list = []
+#             # Decide if we blend instructions together or not
+#             if grammar.options.blend_instructions:
+#                 instructions = get_action_chains(event.actions, grammar, game)
+#             else:
+#                 instructions = [act for act in event.actions]
+#
+#             only_one_action = len(instructions) < 2
+#             for c in instructions:
+#                 desc, separator = generate_instruction(c, grammar, game, counts)
+#                 actions_desc_list.append(desc)
+#                 if c != instructions[-1] and len(separator) > 0:
+#                     actions_desc_list.append(separator)
+#             actions_desc = " ".join(actions_desc_list)
+#
+#         event_tag = grammar.get_random_expansion("#event#")
+#         event_tag = event_tag.replace("(list_of_actions)", actions_desc.strip())
+#
+#         event_desc = grammar.expand(event_tag)
+#         event_desc = re.sub(r"(^|(?<=[?!.]))\s*([a-z])",
+#                             lambda pat: pat.group(1) + ' ' + pat.group(2).upper(),
+#                             event_desc)
+#     return event_desc
 
 
 def get_action_chains(actions, grammar, game):

@@ -12,6 +12,8 @@ from textworld.challenges import register
 from textworld.generator.data import KnowledgeBase
 from textworld.generator.game import GameOptions
 
+from textworld.generator.game import EventCondition, EventAction, EventOr, EventAnd, AbstractEvent, Quest
+
 
 g_rng.set_seed(20190826)
 PATH = os.path.dirname(__file__)
@@ -148,29 +150,33 @@ def quest_design(game):
     quests = []
 
     for i in ['c_0', 'c_1', 'c_2', 'c_3']:
-        win_quest1 = game.new_event(condition={game.new_fact("unread/e", game._entities['cpu_0'])},
-                                    event_style='condition')
-        win_quest2 = game.new_event(action={game.new_action(game._kb.rules['open/c1'],
-                                                            game._entities['P'],
-                                                            game._entities['r_0'],
-                                                            game._entities['s_0'],
-                                                            game._entities[i])},
-                                    event_style='action')
-        quests.append(game.new_quest(win_event={'and': (win_quest1, win_quest2)}, reward=-1))
+        event_1 = game.new_event(conditions={game.new_fact("unread/e",
+                                                           game._entities['cpu_0'])},
+                                 event_type="condition")
+        event_2 = game.new_event(actions=game.new_action('open/c1',
+                                                         game._entities['P'],
+                                                         game._entities['r_0'],
+                                                         game._entities['s_0'],
+                                                         game._entities[i]),
+                                 event_type="action")
+        quests.append(game.new_quest(win_event=game.new_combination(and_combination=[event_1, event_2]),
+                                     reward=-1))
 
-    win_quest = game.new_event(condition={game.new_fact("read/e", game._entities['cpu_0'])},
-                               condition_verb_tense={'read/e': 'has been'},
-                               event_style='condition')
-    quests.append(game.new_quest(win_event={'and': win_quest}, reward=0))
+    event_3 = game.new_event(conditions={game.new_fact("read/e", game._entities['cpu_0'])},
+                             verb_tense={'read/e': 'has been'},
+                             event_type="condition")
+    quests.append(game.new_quest(win_event=game.new_combination(and_combination=[event_3]),
+                                 reward=0))
 
-    win_quest = game.new_event(action={game.new_action(game._kb.rules['open/c'],
-                                                       game._entities['P'],
-                                                       game._entities['r_0'],
-                                                       game._entities['s_0'],
-                                                       game._entities['c_0'],
-                                                       game._entities['cpu_0'])},
-                               event_style='action')
-    quests.append(game.new_quest(win_event={'and': win_quest}, reward=5))
+    event_4 = game.new_event(actions=game.new_action('open/c',
+                                                     game._entities['P'],
+                                                     game._entities['r_0'],
+                                                     game._entities['s_0'],
+                                                     game._entities['c_0'],
+                                                     game._entities['cpu_0']),
+                             event_type="action")
+    quests.append(game.new_quest(win_event=game.new_combination(and_combination=[event_4]),
+                                 reward=5))
 
     game.quests = quests
 
