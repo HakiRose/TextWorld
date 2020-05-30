@@ -44,46 +44,6 @@ def get_failing_constraints(state, kb: Optional[KnowledgeBase] = None):
 
     return failed_constraints
 
-#
-# def new_operation(operation={}):
-#     def func(operator='or', events=[]):
-#         if operator == 'or' and events:
-#             return EventOr(events=events)
-#         if operator == 'and' and events:
-#             return EventAnd(events=events)
-#         else:
-#             raise
-#
-#     if not isinstance(operation, dict):
-#         if len(operation) == 0:
-#             return ()
-#         else:
-#             operation = {'or': tuple(ev for ev in operation)}
-#
-#     y1 = []
-#     for k, v in operation.items():
-#         if isinstance(v, dict):
-#             y1.append(new_operation(operation=v)[0])
-#             y1 = [func(k, y1)]
-#         else:
-#             if isinstance(v, EventCondition) or isinstance(v, EventAction):
-#                 y1.append(func(k, [v]))
-#             else:
-#                 if any((isinstance(it, dict) for it in v)):
-#                     y2 = []
-#                     for it in v:
-#                         if isinstance(it, dict):
-#                             y2.append(new_operation(operation=it)[0])
-#                         else:
-#                             y2.append(func(k, [it]))
-#
-#                     y1 = [func(k, y2)]
-#                 else:
-#                     y1.append(func(k, v))
-#
-#     return tuple(y1)
-#
-
 
 class MissingPlayerError(ValueError):
     pass

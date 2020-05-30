@@ -591,10 +591,7 @@ class Signature(with_metaclass(SignatureTracker, object)):
             self.definition = name[name.find('__') + 2:]
             self.name = name
 
-        # self.name = name
         self.types = tuple(types)
-        # self.verb = verb
-        # self.definition = definition
         self._hash = hash((self.name, self.types))
 
     def __str__(self):
@@ -637,10 +634,6 @@ PropositionTracker = memento_factory(
         cls,
         kwargs.get("name", args[0] if len(args) >= 1 else None),
         tuple(v.name for v in kwargs.get("arguments", args[1] if len(args) == 2 else [])),
-        # tuple(v.name for v in kwargs.get("arguments", args[1] if len(args) >= 2 else [])),
-        # kwargs.get("verb", args[2] if len(args) >= 3 else None),
-        # kwargs.get("definition", args[3] if len(args) >= 4 else None),
-        # kwargs.get("activate", args[4] if len(args) == 5 else 0)
     )
 )
 
@@ -674,17 +667,10 @@ class Proposition(with_metaclass(PropositionTracker, object)):
             self.definition = name[name.find('__') + 2:]
             self.name = name
 
-        # self.name = name
         self.arguments = tuple(arguments)
-        # self.verb = verb
-        # self.definition = definition
         self.signature = Signature(name, [var.type for var in self.arguments])
         self._hash = hash((self.name, self.arguments))
 
-        # if self.verb == 'is':
-        #     activate = 1
-        #
-        # self.activate = activate
 
     @property
     def names(self) -> Collection[str]:
@@ -848,10 +834,7 @@ class Predicate:
             self.definition = name[name.find('__') + 2:]
             self.name = name
 
-        # self.name = name
         self.parameters = tuple(parameters)
-        # self.verb = verb
-        # self.definition = definition
         self.signature = Signature(name, [ph.type for ph in self.parameters])
 
     @property
@@ -905,17 +888,12 @@ class Predicate:
         return {
             "name": self.name,
             "parameters": [ph.serialize() for ph in self.parameters],
-            # "verb": self.verb,
-            # "definition": self.definition
         }
 
     @classmethod
     def deserialize(cls, data: Mapping) -> "Predicate":
         name = data["name"]
         params = [Placeholder.deserialize(ph) for ph in data["parameters"]]
-        # verb = data["verb"]
-        # definition = data["definition"]
-        # return cls(name, params, verb, definition)
         return cls(name, params)
 
     def substitute(self, mapping: Mapping[Placeholder, Placeholder]) -> "Predicate":
@@ -929,7 +907,6 @@ class Predicate:
         """
 
         params = [mapping.get(param, param) for param in self.parameters]
-        # return Predicate(self.name, params, self.verb, self.definition)
         return Predicate(self.name, params)
 
     def instantiate(self, mapping: Mapping[Placeholder, Variable]) -> Proposition:
@@ -947,7 +924,6 @@ class Predicate:
         """
 
         args = [mapping[param] for param in self.parameters]
-        # return Proposition(self.name, arguments=args, verb=self.verb, definition=self.definition)
         return Proposition(self.name, arguments=args)
 
     def match(self, proposition: Proposition) -> Optional[Mapping[Placeholder, Variable]]:
@@ -1145,10 +1121,6 @@ class Action:
         for prop in self.all_propositions:
             if not prop.name.startswith('is__'):
                 prop.activate = 1
-
-    # def is_valid(self):
-    #     aa = self.all_propositions
-    #     return all([prop.activate == 1 for prop in self.all_propositions])
 
 
 class Rule:
